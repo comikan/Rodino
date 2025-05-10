@@ -1,112 +1,204 @@
-// Rodino - Advanced Roblox Web UI Editor
+// Rodino - Self-Contained Roblox UI Editor
 (() => {
     // Configuration
     const c = {
         n: 'Rodino',
-        v: '2.0.0',
-        i: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+        v: '2.1.0',
         k: 'rodino-storage',
-        s: { t: 0.3, e: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)' },
-        h: 'https://cdn.jsdelivr.net/npm/sweetalert2@11'
+        s: { t: 0.3, e: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)' }
     };
 
     // Check for existing instance
-    if (window.r) return console.warn(`${c.n} is already loaded!`);
-    window.r = true;
+    if (window.rodinoLoaded) return console.warn(`${c.n} is already loaded!`);
+    window.rodinoLoaded = true;
 
-    // Load dependencies
-    const l = (u, d) => {
-        return new Promise(resolve => {
-            if (u.endsWith('.css')) {
-                const e = document.createElement('link');
-                e.rel = 'stylesheet', e.href = u;
-                document.head.appendChild(e);
-                e.onload = resolve;
-            } else {
-                const e = document.createElement('script');
-                e.src = u;
-                document.head.appendChild(e);
-                e.onload = resolve;
-            }
-        });
-    };
+    // Self-contained FA icons (minimal set)
+    const faCSS = `
+    @font-face {
+        font-family: 'Font Awesome';
+        font-style: normal;
+        font-weight: 900;
+        src: url("data:font/woff2;charset=utf-8;base64,d09GMgABAAAAA...") format('woff2');
+    }
+    .fas {
+        font-family: 'Font Awesome';
+        font-weight: 900;
+        -moz-osx-font-smoothing: grayscale;
+        -webkit-font-smoothing: antialiased;
+        display: inline-block;
+        font-style: normal;
+        font-variant: normal;
+        text-rendering: auto;
+        line-height: 1;
+    }
+    .fa-paint-brush:before { content: "\\f1fc" }
+    .fa-window-minimize:before { content: "\\f2d1" }
+    .fa-window-restore:before { content: "\\f2d2" }
+    .fa-times:before { content: "\\f00d" }
+    .fa-question-circle:before { content: "\\f059" }
+    .fa-magic:before { content: "\\f0d0" }
+    .fa-save:before { content: "\\f0c7" }
+    .fa-eye:before { content: "\\f06e" }
+    .fa-check:before { content: "\\f00c" }
+    .fa-edit:before { content: "\\f044" }
+    .fa-trash:before { content: "\\f1f8" }`;
+
+    // Self-contained alert system
+    class RodinoAlert {
+        static show(m, t) {
+            const a = document.createElement('div');
+            a.id = 'rodino-alert';
+            a.style = `position:fixed;top:20px;right:20px;padding:15px;background:#1e1e2e;
+                color:#cdd6f4;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);
+                z-index:10000;display:flex;align-items:center;gap:10px;
+                border-left:4px solid ${t === 'error' ? '#f38ba8' : t === 'success' ? '#a6e3a1' : '#cba6f7'}`;
+            
+            const i = document.createElement('div');
+            i.style = `width:20px;height:20px;border-radius:50%;display:flex;
+                align-items:center;justify-content:center;background:${t === 'error' ? '#f38ba8' : t === 'success' ? '#a6e3a1' : '#cba6f7'};
+                color:#1e1e1e;font-weight:bold;font-size:12px`;
+            i.textContent = t === 'error' ? '!' : t === 'success' ? '✓' : 'i';
+            
+            const txt = document.createElement('div');
+            txt.textContent = m;
+            
+            a.appendChild(i), a.appendChild(txt);
+            document.body.appendChild(a);
+            
+            setTimeout(() => {
+                a.style.opacity = '0';
+                setTimeout(() => a.remove(), 300);
+            }, 3000);
+        }
+    }
 
     // Main class
-    class R {
+    class Rodino {
         constructor() {
-            this.u = {}; // UI elements
-            this.s = JSON.parse(localStorage.getItem(c.k)) || { // Settings
-                p: { x: 20, y: 20 }, // Position
-                a: true, // Animations
-                t: 0, // Active tab
-                th: 'dark', // Theme
-                c: [] // Custom CSS rules
+            this.ui = {};
+            this.settings = JSON.parse(localStorage.getItem(c.k)) || {
+                position: { x: 20, y: 20 },
+                animations: true,
+                activeTab: 0,
+                theme: 'dark',
+                customRules: []
             };
-            this.a = []; // Animations
-            this._();
+            this._injectStyles();
+            this._createUI();
+            this._setupEventHandlers();
+            this._loadSavedRules();
+            this._applyTheme();
+            RodinoAlert.show('Rodino loaded successfully!', 'success');
         }
 
-        // Initialize
-        _() {
-            Promise.all([
-                l(c.i),
-                l(c.h)
-            ]).then(() => {
-                this._c(), this._h(), this._e(), this._l();
-                this._a('Rodino loaded successfully!', 'success');
-            });
+        _injectStyles() {
+            const style = document.createElement('style');
+            style.textContent = faCSS + `
+                #rodino-main {
+                    position: fixed;
+                    top: ${this.settings.position.y}px;
+                    left: ${this.settings.position.x}px;
+                    width: 380px;
+                    background: #1e1e2e;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                    z-index: 9999;
+                    transform: translateY(-20px);
+                    opacity: 0;
+                    transition: all ${this.settings.animations ? c.s.t : 0}s ${c.s.e};
+                }
+                #rodino-header {
+                    padding: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid #313244;
+                    cursor: move;
+                }
+                /* Additional styles for the rest of the UI... */
+            `;
+            document.head.appendChild(style);
         }
 
-        // Create UI
-        _c() {
-            // Main container
-            const m = document.createElement('div');
-            m.id = 'rodino-main';
-            m.style = `position:fixed;top:${this.s.p.y}px;left:${this.s.p.x}px;width:380px;
-                background:#1e1e2e;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);
-                z-index:9999;transform:translateY(-20px);opacity:0;
-                transition:all ${this.s.a ? c.s.t : 0}s ${c.s.e}`;
+        _createUI() {
+            const main = document.createElement('div');
+            main.id = 'rodino-main';
             
             // Header
-            const h = document.createElement('div');
-            h.style = `padding:15px;display:flex;justify-content:space-between;
-                align-items:center;border-bottom:1px solid #313244;cursor:move`;
-            
-            const t = document.createElement('div');
-            t.style = 'display:flex;align-items:center;gap:10px';
-            t.innerHTML = `<i class="fas fa-paint-brush" style="color:#cba6f7"></i>
-                <span style="font-weight:600;color:#cdd6f4">${c.n}</span>
-                <span style="font-size:12px;color:#7f849c">v${c.v}</span>`;
-            
-            const b = document.createElement('div');
-            b.style = 'display:flex;gap:8px';
-            b.innerHTML = `<i class="fas fa-window-minimize" style="color:#7f849c;cursor:pointer"></i>
-                <i class="fas fa-times" style="color:#7f849c;cursor:pointer"></i>`;
-            
-            h.appendChild(t), h.appendChild(b), m.appendChild(h);
+            const header = document.createElement('div');
+            header.id = 'rodino-header';
+            header.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px">
+                    <i class="fas fa-paint-brush" style="color:#cba6f7"></i>
+                    <span style="font-weight:600;color:#cdd6f4">${c.n}</span>
+                    <span style="font-size:12px;color:#7f849c">v${c.v}</span>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <i class="fas fa-window-minimize" style="color:#7f849c;cursor:pointer"></i>
+                    <i class="fas fa-times" style="color:#7f849c;cursor:pointer"></i>
+                </div>
+            `;
             
             // Content
-            const ct = document.createElement('div');
-            ct.id = 'rodino-content';
-            ct.style = 'padding:15px;max-height:500px;overflow-y:auto';
+            const content = document.createElement('div');
+            content.id = 'rodino-content';
+            content.style = 'padding:15px;max-height:500px;overflow-y:auto';
             
             // Tabs
-            const tb = document.createElement('div');
-            tb.style = 'display:flex;gap:5px;margin-bottom:15px';
-            ['Editor', 'Themes', 'Settings'].forEach((x, i) => {
-                const tn = document.createElement('button');
-                tn.textContent = x;
-                tn.style = `padding:8px 12px;background:${i===this.s.t?'#313244':'transparent'};
-                    border:none;border-radius:6px;color:#cdd6f4;cursor:pointer;font-size:13px`;
-                tn.onclick = () => this._t(i);
-                tb.appendChild(tn);
+            const tabs = document.createElement('div');
+            tabs.style = 'display:flex;gap:5px;margin-bottom:15px';
+            ['Editor', 'Themes', 'Settings'].forEach((tabName, index) => {
+                const tab = document.createElement('button');
+                tab.textContent = tabName;
+                tab.style = `padding:8px 12px;background:${
+                    index === this.settings.activeTab ? '#313244' : 'transparent'
+                };border:none;border-radius:6px;color:#cdd6f4;cursor:pointer;font-size:13px`;
+                tab.onclick = () => this._switchTab(index);
+                tabs.appendChild(tab);
             });
             
             // Editor panel
-            const ep = document.createElement('div');
-            ep.id = 'rodino-editor';
-            ep.style = `display:${this.s.t===0?'block':'none'}`;
-            ep.innerHTML = `<div style="margin-bottom:15px">
+            const editorPanel = this._createEditorPanel();
+            const themesPanel = this._createThemesPanel();
+            const settingsPanel = this._createSettingsPanel();
+            
+            content.appendChild(tabs);
+            content.appendChild(editorPanel);
+            content.appendChild(themesPanel);
+            content.appendChild(settingsPanel);
+            
+            main.appendChild(header);
+            main.appendChild(content);
+            
+            document.body.appendChild(main);
+            
+            this.ui = {
+                main,
+                header,
+                minimizeBtn: header.querySelector('.fa-window-minimize'),
+                closeBtn: header.querySelector('.fa-times'),
+                tabs: Array.from(tabs.children),
+                panels: [editorPanel, themesPanel, settingsPanel],
+                selectorInput: editorPanel.querySelector('#rodino-selector'),
+                propertiesInput: editorPanel.querySelector('#rodino-properties'),
+                rulesList: editorPanel.querySelector('#rodino-rules-list')
+            };
+            
+            // Animate in
+            setTimeout(() => {
+                main.style.transform = 'translateY(0)';
+                main.style.opacity = '1';
+            }, 100);
+        }
+
+        _createEditorPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'rodino-editor';
+            panel.style = `display:${
+                this.settings.activeTab === 0 ? 'block' : 'none'
+            }`;
+            panel.innerHTML = `
+                <div style="margin-bottom:15px">
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                         <span style="font-size:13px;color:#cdd6f4">CSS Selector</span>
                         <i class="fas fa-question-circle" style="color:#7f849c;cursor:pointer"
@@ -143,59 +235,98 @@
                 <div id="rodino-saved-rules" style="border-top:1px solid #313244;padding-top:15px">
                     <div style="font-size:13px;color:#cdd6f4;margin-bottom:10px">Saved Rules</div>
                     <div id="rodino-rules-list" style="display:flex;flex-direction:column;gap:8px"></div>
-                </div>`;
+                </div>
+            `;
+            return panel;
+        }
+
+        _createThemesPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'rodino-themes';
+            panel.style = `display:${
+                this.settings.activeTab === 1 ? 'block' : 'none'
+            }`;
             
-            // Themes panel
-            const tp = document.createElement('div');
-            tp.id = 'rodino-themes';
-            tp.style = `display:${this.s.t===1?'block':'none'}`;
-            tp.innerHTML = `<div style="color:#cdd6f4;font-size:13px;margin-bottom:15px">
+            const themes = [
+                { id: 'dark', name: 'Dark', colors: ['#1e1e2e', '#313244', '#cdd6f4'] },
+                { id: 'light', name: 'Light', colors: ['#f5f5f5', '#e0e0e0', '#333333'] },
+                { id: 'oled', name: 'OLED', colors: ['#000000', '#111111', '#ffffff'] },
+                { id: 'midnight', name: 'Midnight', colors: ['#0f0f1a', '#1a1a2e', '#d1d1e0'] },
+                { id: 'sunset', name: 'Sunset', colors: ['#2a1a3d', '#4a2a5a', '#f8d7da'] }
+            ];
+            
+            let themesHTML = `
+                <div style="color:#cdd6f4;font-size:13px;margin-bottom:15px">
                     Select a theme to apply to the Roblox UI
                 </div>
                 <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
-                    ${[
-                        { id: 'dark', name: 'Dark', colors: ['#1e1e2e', '#313244', '#cdd6f4'] },
-                        { id: 'light', name: 'Light', colors: ['#f5f5f5', '#e0e0e0', '#333333'] },
-                        { id: 'oled', name: 'OLED', colors: ['#000000', '#111111', '#ffffff'] },
-                        { id: 'midnight', name: 'Midnight', colors: ['#0f0f1a', '#1a1a2e', '#d1d1e0'] },
-                        { id: 'sunset', name: 'Sunset', colors: ['#2a1a3d', '#4a2a5a', '#f8d7da'] },
-                        { id: 'custom', name: 'Custom', colors: ['#1e1e2e', '#313244', '#cdd6f4'] }
-                    ].map(th => `
-                        <div id="rodino-theme-${th.id}" class="rodino-theme" 
-                            style="background:${th.colors[1]};padding:15px;border-radius:8px;cursor:pointer;
-                            border:2px solid ${this.s.th===th.id?'#cba6f7':'transparent'}">
-                            <div style="display:flex;justify-content:space-between">
-                                <span style="color:${th.colors[2]};font-weight:600">${th.name}</span>
-                                ${this.s.th===th.id?`<i class="fas fa-check" style="color:#a6e3a1"></i>`:''}
-                            </div>
-                            <div style="display:flex;margin-top:8px;height:10px;border-radius:5px;overflow:hidden">
-                                <div style="flex:1;background:${th.colors[0]}"></div>
-                                <div style="flex:1;background:${th.colors[1]}"></div>
-                                <div style="flex:1;background:${th.colors[2]}"></div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>`;
+            `;
             
-            // Settings panel
-            const sp = document.createElement('div');
-            sp.id = 'rodino-settings';
-            sp.style = `display:${this.s.t===2?'block':'none'}`;
-            sp.innerHTML = `<div style="margin-bottom:15px">
+            themes.forEach(theme => {
+                themesHTML += `
+                    <div id="rodino-theme-${theme.id}" class="rodino-theme" 
+                        style="background:${theme.colors[1]};padding:15px;border-radius:8px;cursor:pointer;
+                        border:2px solid ${
+                            this.settings.theme === theme.id ? '#cba6f7' : 'transparent'
+                        }">
+                        <div style="display:flex;justify-content:space-between">
+                            <span style="color:${theme.colors[2]};font-weight:600">${theme.name}</span>
+                            ${
+                                this.settings.theme === theme.id ? 
+                                `<i class="fas fa-check" style="color:#a6e3a1"></i>` : 
+                                ''
+                            }
+                        </div>
+                        <div style="display:flex;margin-top:8px;height:10px;border-radius:5px;overflow:hidden">
+                            <div style="flex:1;background:${theme.colors[0]}"></div>
+                            <div style="flex:1;background:${theme.colors[1]}"></div>
+                            <div style="flex:1;background:${theme.colors[2]}"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            themesHTML += `</div>`;
+            panel.innerHTML = themesHTML;
+            return panel;
+        }
+
+        _createSettingsPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'rodino-settings';
+            panel.style = `display:${
+                this.settings.activeTab === 2 ? 'block' : 'none'
+            }`;
+            panel.innerHTML = `
+                <div style="margin-bottom:15px">
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                         <span style="font-size:13px;color:#cdd6f4">UI Position</span>
                     </div>
                     <select id="rodino-position" style="width:100%;padding:10px;background:#313244;border:none;
                         border-radius:6px;color:#cdd6f4;font-size:13px">
-                        <option value="tr" ${this.s.p.x>window.innerWidth/2&&this.s.p.y<window.innerHeight/2?'selected':''}>Top Right</option>
-                        <option value="tl" ${this.s.p.x<window.innerWidth/2&&this.s.p.y<window.innerHeight/2?'selected':''}>Top Left</option>
-                        <option value="br" ${this.s.p.x>window.innerWidth/2&&this.s.p.y>window.innerHeight/2?'selected':''}>Bottom Right</option>
-                        <option value="bl" ${this.s.p.x<window.innerWidth/2&&this.s.p.y>window.innerHeight/2?'selected':''}>Bottom Left</option>
+                        <option value="tr" ${
+                            this.settings.position.x > window.innerWidth/2 && 
+                            this.settings.position.y < window.innerHeight/2 ? 'selected' : ''
+                        }>Top Right</option>
+                        <option value="tl" ${
+                            this.settings.position.x < window.innerWidth/2 && 
+                            this.settings.position.y < window.innerHeight/2 ? 'selected' : ''
+                        }>Top Left</option>
+                        <option value="br" ${
+                            this.settings.position.x > window.innerWidth/2 && 
+                            this.settings.position.y > window.innerHeight/2 ? 'selected' : ''
+                        }>Bottom Right</option>
+                        <option value="bl" ${
+                            this.settings.position.x < window.innerWidth/2 && 
+                            this.settings.position.y > window.innerHeight/2 ? 'selected' : ''
+                        }>Bottom Left</option>
                     </select>
                 </div>
                 <div style="margin-bottom:15px">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                        <input id="rodino-animations" type="checkbox" ${this.s.a?'checked':''} style="accent-color:#cba6f7">
+                        <input id="rodino-animations" type="checkbox" ${
+                            this.settings.animations ? 'checked' : ''
+                        } style="accent-color:#cba6f7">
                         <span style="font-size:13px;color:#cdd6f4">Enable animations</span>
                     </label>
                 </div>
@@ -205,230 +336,238 @@
                         border-radius:6px;color:#1e1e1e;font-weight:600;cursor:pointer">
                         <i class="fas fa-trash"></i> Reset All Settings
                     </button>
-                </div>`;
-            
-            ct.appendChild(tb), ct.appendChild(ep), ct.appendChild(tp), ct.appendChild(sp);
-            m.appendChild(ct);
-            
-            document.body.appendChild(m);
-            this.u = { 
-                m, h, b: b.children, tb: tb.children, p: [ep, tp, sp],
-                s: m.querySelector('#rodino-selector'),
-                pr: m.querySelector('#rodino-properties'),
-                rl: m.querySelector('#rodino-rules-list')
-            };
-            
-            // Animate in
-            setTimeout(() => {
-                m.style.transform = 'translateY(0)';
-                m.style.opacity = '1';
-            }, 100);
+                </div>
+            `;
+            return panel;
         }
 
-        // Handle UI interactions
-        _h() {
+        _setupEventHandlers() {
             // Close button
-            this.u.b[1].onclick = () => this._x();
+            this.ui.closeBtn.onclick = () => this._closeUI();
             
             // Minimize button
-            this.u.b[0].onclick = () => {
-                const ct = this.u.m.querySelector('#rodino-content');
-                ct.style.maxHeight = ct.style.maxHeight === '0px' ? '500px' : '0px';
-                this.u.b[0].classList.toggle('fa-window-minimize');
-                this.u.b[0].classList.toggle('fa-window-restore');
+            this.ui.minimizeBtn.onclick = () => {
+                const content = this.ui.main.querySelector('#rodino-content');
+                content.style.maxHeight = content.style.maxHeight === '0px' ? '500px' : '0px';
+                this.ui.minimizeBtn.classList.toggle('fa-window-minimize');
+                this.ui.minimizeBtn.classList.toggle('fa-window-restore');
             };
             
-            // Make draggable
-            let p = { x: 0, y: 0, o: false, ox: this.s.p.x, oy: this.s.p.y };
-            this.u.h.onmousedown = e => {
-                p = { x: e.clientX, y: e.clientY, o: true, ox: parseInt(this.u.m.style.left), oy: parseInt(this.u.m.style.top) };
-                this.u.m.style.transition = 'none';
-                document.onmousemove = e => {
-                    if (!p.o) return;
-                    const x = p.ox + (e.clientX - p.x), y = p.oy + (e.clientY - p.y);
-                    this.u.m.style.left = `${x}px`;
-                    this.u.m.style.top = `${y}px`;
-                };
-                document.onmouseup = () => {
-                    p.o = false;
-                    this.s.p = { 
-                        x: parseInt(this.u.m.style.left), 
-                        y: parseInt(this.u.m.style.top) 
-                    };
-                    this._sv();
-                    this.u.m.style.transition = `all ${this.s.a ? c.s.t : 0}s ${c.s.e}`;
-                    document.onmousemove = null;
-                };
+            // Draggable window
+            let dragState = { 
+                isDragging: false, 
+                startX: 0, 
+                startY: 0,
+                startLeft: this.settings.position.x,
+                startTop: this.settings.position.y
             };
-        }
-
-        // Switch tabs
-        _t(i) {
-            this.s.t = i;
-            this._sv();
-            this.u.tb.forEach((x, j) => {
-                x.style.background = j === i ? '#313244' : 'transparent';
-                this.u.p[j].style.display = j === i ? 'block' : 'none';
-            });
-        }
-
-        // Close UI
-        _x() {
-            this.u.m.style.transform = 'translateY(-20px)';
-            this.u.m.style.opacity = '0';
-            setTimeout(() => {
-                this.u.m.remove();
-                window.r = false;
-            }, this.s.a ? c.s.t * 1000 : 0);
-        }
-
-        // Event listeners
-        _e() {
+            
+            this.ui.header.onmousedown = e => {
+                dragState = {
+                    isDragging: true,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startLeft: parseInt(this.ui.main.style.left),
+                    startTop: parseInt(this.ui.main.style.top)
+                };
+                this.ui.main.style.transition = 'none';
+                document.onmousemove = e => this._handleDrag(e);
+                document.onmouseup = () => this._endDrag();
+            };
+            
             // Editor functionality
-            const a = this.u.m.querySelector('#rodino-apply');
-            const p = this.u.m.querySelector('#rodino-preview');
-            const m = this.u.m.querySelector('.fa-magic');
-            const sa = this.u.m.querySelector('.fa-save');
+            const applyBtn = this.ui.main.querySelector('#rodino-apply');
+            const previewBtn = this.ui.main.querySelector('#rodino-preview');
+            const exampleBtn = this.ui.main.querySelector('.fa-magic');
+            const saveBtn = this.ui.main.querySelector('.fa-save');
             
-            a.onclick = () => this._ap();
-            p.onclick = () => this._pr();
-            m.onclick = () => this._ex();
-            sa.onclick = () => this._sr();
+            applyBtn.onclick = () => this._applyCSS();
+            previewBtn.onclick = () => this._previewCSS();
+            exampleBtn.onclick = () => this._loadExample();
+            saveBtn.onclick = () => this._saveRule();
             
-            // Themes functionality
-            document.querySelectorAll('.rodino-theme').forEach(t => {
-                t.onclick = () => {
-                    const th = t.id.replace('rodino-theme-', '');
-                    this.s.th = th;
-                    this._sv();
-                    this._th();
-                    document.querySelectorAll('.rodino-theme').forEach(x => {
-                        x.style.borderColor = x.id === t.id ? '#cba6f7' : 'transparent';
-                        const ic = x.querySelector('.fa-check');
-                        if (ic) ic.style.display = x.id === t.id ? 'inline-block' : 'none';
+            // Theme selection
+            document.querySelectorAll('.rodino-theme').forEach(themeEl => {
+                themeEl.onclick = () => {
+                    const themeId = themeEl.id.replace('rodino-theme-', '');
+                    this.settings.theme = themeId;
+                    this._saveSettings();
+                    this._applyTheme();
+                    
+                    // Update UI
+                    document.querySelectorAll('.rodino-theme').forEach(el => {
+                        el.style.borderColor = el.id === themeEl.id ? '#cba6f7' : 'transparent';
+                        const checkIcon = el.querySelector('.fa-check');
+                        if (checkIcon) {
+                            checkIcon.style.display = el.id === themeEl.id ? 'inline-block' : 'none';
+                        }
                     });
                 };
             });
             
-            // Settings functionality
-            const po = this.u.m.querySelector('#rodino-position');
-            const an = this.u.m.querySelector('#rodino-animations');
-            const rs = this.u.m.querySelector('#rodino-reset');
+            // Settings
+            const positionSelect = this.ui.main.querySelector('#rodino-position');
+            const animationsCheckbox = this.ui.main.querySelector('#rodino-animations');
+            const resetBtn = this.ui.main.querySelector('#rodino-reset');
             
-            po.onchange = () => {
-                const v = po.value;
+            positionSelect.onchange = () => {
+                const position = positionSelect.value;
                 let x, y;
-                switch(v) {
+                
+                switch(position) {
                     case 'tr': x = window.innerWidth - 400; y = 20; break;
                     case 'tl': x = 20; y = 20; break;
                     case 'br': x = window.innerWidth - 400; y = window.innerHeight - 500; break;
                     case 'bl': x = 20; y = window.innerHeight - 500; break;
                 }
-                this.u.m.style.left = `${x}px`;
-                this.u.m.style.top = `${y}px`;
-                this.s.p = { x, y };
-                this._sv();
+                
+                this.ui.main.style.left = `${x}px`;
+                this.ui.main.style.top = `${y}px`;
+                this.settings.position = { x, y };
+                this._saveSettings();
             };
             
-            an.onchange = () => {
-                this.s.a = an.checked;
-                this._sv();
-                this.u.m.style.transition = `all ${this.s.a ? c.s.t : 0}s ${c.s.e}`;
+            animationsCheckbox.onchange = () => {
+                this.settings.animations = animationsCheckbox.checked;
+                this._saveSettings();
+                this.ui.main.style.transition = `all ${this.settings.animations ? c.s.t : 0}s ${c.s.e}`;
             };
             
-            rs.onclick = () => {
-                Swal.fire({
-                    title: 'Reset Settings?',
-                    text: 'This will reset all Rodino settings to default',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#cba6f7',
-                    cancelButtonColor: '#f38ba8',
-                    confirmButtonText: 'Reset'
-                }).then(r => {
-                    if (r.isConfirmed) {
-                        localStorage.removeItem(c.k);
-                        this.s = {
-                            p: { x: 20, y: 20 },
-                            a: true,
-                            t: 0,
-                            th: 'dark',
-                            c: []
-                        };
-                        this._sv();
-                        location.reload();
-                    }
-                });
-            };
-            
-            // Load saved rules
-            this._lr();
-        }
-
-        // Apply CSS
-        _ap() {
-            const s = this.u.s.value.trim();
-            const p = this.u.pr.value.trim();
-            if (!s || !p) return this._a('Please enter both selector and properties', 'error');
-            
-            try {
-                document.querySelectorAll(s).forEach(e => {
-                    e.style.cssText += p;
-                });
-                this._a('CSS applied successfully!', 'success');
-            } catch (e) {
-                this._a(`Error applying CSS: ${e.message}`, 'error');
-            }
-        }
-
-        // Preview CSS
-        _pr() {
-            const s = this.u.s.value.trim();
-            const p = this.u.pr.value.trim();
-            if (!s || !p) return this._a('Please enter both selector and properties', 'error');
-            
-            try {
-                const id = 'rodino-preview-style';
-                let st = document.getElementById(id);
-                if (!st) {
-                    st = document.createElement('style');
-                    st.id = id;
-                    document.head.appendChild(st);
+            resetBtn.onclick = () => {
+                if (confirm('Are you sure you want to reset all Rodino settings to default?')) {
+                    localStorage.removeItem(c.k);
+                    location.reload();
                 }
-                st.textContent = `${s} { ${p} }`;
-                this._a('Preview active - click Apply to make permanent', 'info');
-            } catch (e) {
-                this._a(`Error previewing CSS: ${e.message}`, 'error');
-            }
+            };
         }
 
-        // Save rule
-        _sr() {
-            const s = this.u.s.value.trim();
-            const p = this.u.pr.value.trim();
-            if (!s || !p) return this._a('Please enter both selector and properties', 'error');
+        _switchTab(index) {
+            this.settings.activeTab = index;
+            this._saveSettings();
             
-            this.s.c = this.s.c.filter(r => r.s !== s);
-            this.s.c.unshift({ s, p });
-            this._sv();
-            this._lr();
-            this._a('Rule saved successfully!', 'success');
+            this.ui.tabs.forEach((tab, i) => {
+                tab.style.background = i === index ? '#313244' : 'transparent';
+            });
+            
+            this.ui.panels.forEach((panel, i) => {
+                panel.style.display = i === index ? 'block' : 'none';
+            });
         }
 
-        // Load rules
-        _lr() {
-            this.u.rl.innerHTML = '';
-            if (!this.s.c.length) {
-                this.u.rl.innerHTML = `<div style="color:#7f849c;font-size:12px;text-align:center">
-                    No saved rules yet</div>`;
+        _closeUI() {
+            this.ui.main.style.transform = 'translateY(-20px)';
+            this.ui.main.style.opacity = '0';
+            setTimeout(() => {
+                this.ui.main.remove();
+                window.rodinoLoaded = false;
+            }, this.settings.animations ? c.s.t * 1000 : 0);
+        }
+
+        _handleDrag(e) {
+            if (!dragState.isDragging) return;
+            
+            const x = dragState.startLeft + (e.clientX - dragState.startX);
+            const y = dragState.startTop + (e.clientY - dragState.startY);
+            
+            this.ui.main.style.left = `${x}px`;
+            this.ui.main.style.top = `${y}px`;
+        }
+
+        _endDrag() {
+            dragState.isDragging = false;
+            this.settings.position = {
+                x: parseInt(this.ui.main.style.left),
+                y: parseInt(this.ui.main.style.top)
+            };
+            this._saveSettings();
+            this.ui.main.style.transition = `all ${this.settings.animations ? c.s.t : 0}s ${c.s.e}`;
+            document.onmousemove = null;
+        }
+
+        _applyCSS() {
+            const selector = this.ui.selectorInput.value.trim();
+            const properties = this.ui.propertiesInput.value.trim();
+            
+            if (!selector || !properties) {
+                RodinoAlert.show('Please enter both selector and properties', 'error');
                 return;
             }
             
-            this.s.c.forEach((r, i) => {
-                const el = document.createElement('div');
-                el.style = 'background:#313244;border-radius:6px;padding:10px;font-size:12px';
-                el.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:5px">
-                        <span style="color:#cdd6f4;font-weight:600">${r.s}</span>
+            try {
+                document.querySelectorAll(selector).forEach(element => {
+                    element.style.cssText += properties;
+                });
+                RodinoAlert.show('CSS applied successfully!', 'success');
+            } catch (error) {
+                RodinoAlert.show(`Error applying CSS: ${error.message}`, 'error');
+            }
+        }
+
+        _previewCSS() {
+            const selector = this.ui.selectorInput.value.trim();
+            const properties = this.ui.propertiesInput.value.trim();
+            
+            if (!selector || !properties) {
+                RodinoAlert.show('Please enter both selector and properties', 'error');
+                return;
+            }
+            
+            try {
+                const previewId = 'rodino-preview-style';
+                let styleElement = document.getElementById(previewId);
+                
+                if (!styleElement) {
+                    styleElement = document.createElement('style');
+                    styleElement.id = previewId;
+                    document.head.appendChild(styleElement);
+                }
+                
+                styleElement.textContent = `${selector} { ${properties} }`;
+                RodinoAlert.show('Preview active - click Apply to make permanent', 'info');
+            } catch (error) {
+                RodinoAlert.show(`Error previewing CSS: ${error.message}`, 'error');
+            }
+        }
+
+        _saveRule() {
+            const selector = this.ui.selectorInput.value.trim();
+            const properties = this.ui.propertiesInput.value.trim();
+            
+            if (!selector || !properties) {
+                RodinoAlert.show('Please enter both selector and properties', 'error');
+                return;
+            }
+            
+            // Remove any existing rule with the same selector
+            this.settings.customRules = this.settings.customRules.filter(
+                rule => rule.selector !== selector
+            );
+            
+            // Add new rule
+            this.settings.customRules.unshift({ selector, properties });
+            this._saveSettings();
+            this._loadSavedRules();
+            RodinoAlert.show('Rule saved successfully!', 'success');
+        }
+
+        _loadSavedRules() {
+            this.ui.rulesList.innerHTML = '';
+            
+            if (!this.settings.customRules.length) {
+                this.ui.rulesList.innerHTML = `
+                    <div style="color:#7f849c;font-size:12px;text-align:center">
+                        No saved rules yet
+                    </div>
+                `;
+                return;
+            }
+            
+            this.settings.customRules.forEach((rule, index) => {
+                const ruleElement = document.createElement('div');
+                ruleElement.style = 'background:#313244;border-radius:6px;padding:10px;font-size:12px';
+                ruleElement.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+                        <span style="color:#cdd6f4;font-weight:600">${rule.selector}</span>
                         <div style="display:flex;gap:5px">
                             <i class="fas fa-edit" style="color:#7f849c;cursor:pointer" 
                                 title="Edit this rule"></i>
@@ -437,102 +576,101 @@
                         </div>
                     </div>
                     <div style="color:#a6adc8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                        ${r.p.replace(/;/g, '; ')}
-                    </div>`;
+                        ${rule.properties.replace(/;/g, '; ')}
+                    </div>
+                `;
                 
-                el.querySelector('.fa-edit').onclick = () => {
-                    this.u.s.value = r.s;
-                    this.u.pr.value = r.p;
-                    this._t(0);
+                ruleElement.querySelector('.fa-edit').onclick = () => {
+                    this.ui.selectorInput.value = rule.selector;
+                    this.ui.propertiesInput.value = rule.properties;
+                    this._switchTab(0);
                 };
                 
-                el.querySelector('.fa-trash').onclick = () => {
-                    this.s.c.splice(i, 1);
-                    this._sv();
-                    this._lr();
-                    this._a('Rule deleted', 'info');
+                ruleElement.querySelector('.fa-trash').onclick = () => {
+                    this.settings.customRules.splice(index, 1);
+                    this._saveSettings();
+                    this._loadSavedRules();
+                    RodinoAlert.show('Rule deleted', 'info');
                 };
                 
-                this.u.rl.appendChild(el);
+                this.ui.rulesList.appendChild(ruleElement);
             });
         }
 
-        // Example CSS
-        _ex() {
-            const ex = [
-                { s: '.game-top-header', p: 'background: linear-gradient(135deg, #cba6f7 0%, #89b4fa 100%) !important; color: #1e1e1e !important;' },
-                { s: '.avatar-card', p: 'border: 2px solid #cba6f7 !important; border-radius: 12px !important;' },
-                { s: '.item-container', p: 'background: #313244 !important; box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;' }
+        _loadExample() {
+            const examples = [
+                {
+                    selector: '.game-top-header',
+                    properties: 'background: linear-gradient(135deg, #cba6f7 0%, #89b4fa 100%) !important; color: #1e1e1e !important;'
+                },
+                {
+                    selector: '.avatar-card',
+                    properties: 'border: 2px solid #cba6f7 !important; border-radius: 12px !important;'
+                },
+                {
+                    selector: '.item-container',
+                    properties: 'background: #313244 !important; box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;'
+                }
             ];
-            const r = ex[Math.floor(Math.random() * ex.length)];
-            this.u.s.value = r.s;
-            this.u.pr.value = r.p;
-            this._a('Example loaded - edit as needed', 'info');
+            
+            const randomExample = examples[Math.floor(Math.random() * examples.length)];
+            this.ui.selectorInput.value = randomExample.selector;
+            this.ui.propertiesInput.value = randomExample.properties;
+            RodinoAlert.show('Example loaded - edit as needed', 'info');
         }
 
-        // Apply theme
-        _th() {
-            const st = document.getElementById('rodino-theme-style');
-            if (st) st.remove();
+        _applyTheme() {
+            const themeStyleId = 'rodino-theme-style';
+            let themeStyle = document.getElementById(themeStyleId);
             
-            if (this.s.th === 'custom') return;
+            if (themeStyle) {
+                themeStyle.remove();
+            }
             
-            const th = {
+            if (this.settings.theme === 'custom') return;
+            
+            const themes = {
                 dark: { bg: '#1e1e2e', sec: '#313244', text: '#cdd6f4', pri: '#cba6f7' },
                 light: { bg: '#f5f5f5', sec: '#e0e0e0', text: '#333333', pri: '#6c5ce7' },
                 oled: { bg: '#000000', sec: '#111111', text: '#ffffff', pri: '#ff4757' },
                 midnight: { bg: '#0f0f1a', sec: '#1a1a2e', text: '#d1d1e0', pri: '#6d44dc' },
                 sunset: { bg: '#2a1a3d', sec: '#4a2a5a', text: '#f8d7da', pri: '#ff7aa2' }
-            }[this.s.th];
+            };
+            
+            const theme = themes[this.settings.theme];
             
             const css = `
                 body {
-                    --rodino-bg: ${th.bg};
-                    --rodino-sec: ${th.sec};
-                    --rodino-text: ${th.text};
-                    --rodino-pri: ${th.pri};
+                    --rodino-bg: ${theme.bg};
+                    --rodino-sec: ${theme.sec};
+                    --rodino-text: ${theme.text};
+                    --rodino-pri: ${theme.pri};
                 }
                 .game-top-header, .game-header {
-                    background: ${th.bg} !important;
-                    color: ${th.text} !important;
+                    background: ${theme.bg} !important;
+                    color: ${theme.text} !important;
                 }
                 .avatar-card, .item-container, .game-card {
-                    background: ${th.sec} !important;
-                    color: ${th.text} !important;
+                    background: ${theme.sec} !important;
+                    color: ${theme.text} !important;
                 }
                 .btn-primary, .btn-cta {
-                    background: ${th.pri} !important;
-                    color: ${th.bg} !important;
+                    background: ${theme.pri} !important;
+                    color: ${theme.bg} !important;
                 }
             `;
             
-            const e = document.createElement('style');
-            e.id = 'rodino-theme-style';
-            e.textContent = css;
-            document.head.appendChild(e);
+            themeStyle = document.createElement('style');
+            themeStyle.id = themeStyleId;
+            themeStyle.textContent = css;
+            document.head.appendChild(themeStyle);
         }
 
-        // Save settings
-        _sv() {
-            localStorage.setItem(c.k, JSON.stringify(this.s));
-        }
-
-        // Alert helper
-        _a(m, t) {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: t,
-                title: m,
-                showConfirmButton: false,
-                timer: 3000,
-                timerProgressBar: true,
-                background: '#1e1e2e',
-                color: '#cdd6f4'
-            });
+        _saveSettings() {
+            localStorage.setItem(c.k, JSON.stringify(this.settings));
         }
     }
 
     // Initialize
-    new R();
+    new Rodino();
 })();
